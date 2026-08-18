@@ -158,6 +158,7 @@ const Api = {
 6. 题目要有区分度，不能太简单也不能太偏
 7. knowledgePoint字段填写该题所属的知识点名称
 8. 填空题的keywords必须是从标准答案中提取的核心词，不得包含标准答案中没有的扩展词（例如标准答案是"虚函数"时，keywords只能是["虚函数"]，不能是["虚函数","多态","动态绑定"]），否则用户答对也会被判错
+9. JSON字符串值内部禁止包含真实换行符和Tab，需要换行时用\\n表示（如多要点答案写成"要点1\\n要点2"）
 
 请严格以JSON数组格式返回，不要包含markdown代码块标记，不要包含其他任何文本：
 [
@@ -275,12 +276,14 @@ const Api = {
   },
 
   _parseJson(text) {
+    // 清洗字符串字面量中的裸控制字符（真实换行/Tab等），避免 "Bad control character" 错误
+    const sanitized = this._sanitizeControlChars(text);
     // 尝试直接解析
     try {
-      return JSON.parse(text);
+      return JSON.parse(sanitized);
     } catch (e) {
       // 尝试提取 JSON 部分
-      const match = text.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
+      const match = sanitized.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
       if (match) {
         try {
           return JSON.parse(match[0]);
@@ -299,5 +302,30 @@ const Api = {
       }
       throw new Error("无法解析返回内容为JSON");
     }
+  },
+
+  /**
+   * 将 JSON 字符串字面量内部的裸控制字符（\n \r \t 等）转义为合法形式
+   * 字符串外部（结构空白）的控制字符保持原样
+   */
+  _sanitizeControlChars(text) {
+    let out = "";
+    let inString = false;
+    let escaped = false;
+    for (const ch of text) {
+      if (escaped) { out += ch; escaped = false; continue; }
+      if (ch === "\\") { out += ch; escaped = true; continue; }
+      if (ch === '"') { inString = !inString; out += ch; continue; }
+      if (inString) {
+        if (ch === "\n") out += "\\n";
+        else if (ch === "\r") out += "\\r";
+        else if (ch === "\t") out += "\\t";
+        else if (ch < " ") out += " ";
+        else out += ch;
+      } else {
+        out += ch;
+      }
+    }
+    return out;
   }
 };
