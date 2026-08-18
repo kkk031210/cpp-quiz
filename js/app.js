@@ -358,8 +358,11 @@ const App = {
         resultDetail = isCorrect ? "✅ 回答正确！" : "❌ 回答错误";
       } else if (q.type === "fill") {
         userAnswer = document.getElementById("fill-answer").value.trim();
-        isCorrect = this._checkFillAnswer(userAnswer, q.keywords || [q.answer]);
-        resultDetail = isCorrect ? "✅ 回答正确！" : "❌ 关键词匹配未通过";
+        const fillResult = this._checkFillAnswer(userAnswer, q.keywords || [q.answer], q.answer);
+        isCorrect = fillResult.passed;
+        resultDetail = isCorrect
+          ? "✅ 回答正确！"
+          : `❌ 关键词匹配未通过（匹配 ${fillResult.matched}/${fillResult.total}，需 ≥60%）`;
       } else if (q.type === "short") {
         userAnswer = document.getElementById("short-answer").value.trim();
         submitBtn.innerHTML = '<span class="spinner"></span> AI 评判中...';
@@ -402,13 +405,29 @@ const App = {
     }
   },
 
-  _checkFillAnswer(userAnswer, keywords) {
-    const lower = userAnswer.toLowerCase();
-    let matched = 0;
-    keywords.forEach(kw => {
-      if (lower.includes(String(kw).toLowerCase())) matched++;
-    });
-    return keywords.length > 0 && (matched / keywords.length) >= 0.6;
+  _checkFillAnswer(userAnswer, keywords, standardAnswer) {
+    // 归一化：小写、去空白、全角转半角、去中英文标点
+    const normalize = (s) => String(s || "")
+      .toLowerCase()
+      .replace(/[\s\u3000]+/g, "")
+      .replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+      .replace(/[.,/#!$%^&*;:{}=\-_`~()<>?"'[\]]|[。，、；：？！“”‘’（）【】《》]/g, "");
+
+    const normUser = normalize(userAnswer);
+    const normStd = normalize(standardAnswer);
+
+    // 1. 与标准答案一致或包含标准答案 → 直接正确（关键词只是辅助）
+    if (normStd && (normUser === normStd || normUser.includes(normStd))) {
+      return { passed: true, matched: 1, total: 1 };
+    }
+
+    // 2. 关键词匹配：≥60% 算通过
+    const kws = (keywords || []).map(normalize).filter(Boolean);
+    if (kws.length === 0) {
+      return { passed: false, matched: 0, total: 0 };
+    }
+    const matched = kws.filter(k => normUser.includes(k)).length;
+    return { passed: matched / kws.length >= 0.6, matched, total: kws.length };
   },
 
   _showFeedback(q, userAnswer, isCorrect, resultDetail) {
