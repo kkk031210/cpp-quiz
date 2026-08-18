@@ -101,7 +101,7 @@ const Api = {
 
     const prompt = this._buildGenerationPrompt(knowledgePointNames, typeNames, count, diffText);
 
-    const res = await this._callApi(config, prompt, 4096);
+    const res = await this._callApi(config, prompt, 8192);
     return this._parseQuestions(res);
   },
 
@@ -128,7 +128,7 @@ const Api = {
 请以JSON格式返回（只返回JSON，不要其他文本）：
 {"result": "correct" | "partial" | "wrong", "score": 0-100, "comment": "简短点评，指出优缺点"}`;
 
-    const res = await this._callApi(config, prompt, 512);
+    const res = await this._callApi(config, prompt, 4096);
     return this._parseJson(res);
   },
 
@@ -190,18 +190,20 @@ const Api = {
   },
 
   async _callApi(config, prompt, maxTokens) {
+    const body = {
+      model: config.model,
+      messages: [
+        { role: "system", content: "你是一个专业的C++技术面试官。请严格按照用户要求的JSON格式返回内容，不要添加任何额外文本或markdown标记。" },
+        { role: "user", content: prompt }
+      ],
+      max_tokens: maxTokens,
+      temperature: 0.7
+    };
+
     const res = await fetch(`${config.baseUrl}/chat/completions`, {
       method: "POST",
       headers: this._getHeaders(config.apiKey),
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: "system", content: "你是一个专业的C++技术面试官。请严格按照用户要求的JSON格式返回内容，不要添加任何额外文本或markdown标记。" },
-          { role: "user", content: prompt }
-        ],
-        max_tokens: maxTokens,
-        temperature: 0.7
-      })
+      body: JSON.stringify(body)
     });
 
     if (!res.ok) {
@@ -210,7 +212,27 @@ const Api = {
     }
 
     const data = await res.json();
-    return data.choices[0].message.content;
+    const choice = data.choices[0];
+    const content = choice?.message?.content || "";
+
+    // 思考型模型可能先输出 reasoning_content，若 token 不够 content 会为空
+    if (!content.trim()) {
+      if (choice?.finish_reason === "length") {
+        // token 上限不足被截断：加倍后自动重试一次
+        if (maxTokens < 32768) {
+          return this._callApi(config, prompt, maxTokens * 2);
+        }
+        throw new Error("回复因模型输出长度限制被截断（思考型模型消耗大量token）。建议在设置中更换为非思考型模型，或减少题目数量。");
+      }
+      throw new Error("模型返回了空内容，请重试或更换模型");
+    }
+
+    // 即使有内容，如果被截断也重试拿完整结果（JSON 截断会导致解析失败）
+    if (choice?.finish_reason === "length" && maxTokens < 32768) {
+      return this._callApi(config, prompt, maxTokens * 2);
+    }
+
+    return content;
   },
 
   _parseQuestions(rawText) {
