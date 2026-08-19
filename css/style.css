@@ -491,6 +491,35 @@ body {
   margin-bottom: 20px;
 }
 
+/* 提交答案后锁定答题区，选项变为禁用灰色 */
+.quiz-answer-area.answered {
+  pointer-events: none;
+}
+
+.quiz-answer-area.answered .option-item {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background: var(--gray-100);
+  border-color: var(--gray-200);
+}
+
+.quiz-answer-area.answered .option-item .option-letter {
+  background: var(--gray-200);
+  color: var(--gray-500);
+}
+
+/* 已选择的项提交后仍保持可见，但转为灰色以表达锁定 */
+.quiz-answer-area.answered .option-item.selected {
+  opacity: 1;
+  border-color: var(--gray-400);
+  background: var(--gray-100);
+}
+
+.quiz-answer-area.answered .option-item.selected .option-letter {
+  background: var(--gray-400);
+  color: #fff;
+}
+
 /* 选择题选项 */
 .option-item {
   display: flex;
