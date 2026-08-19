@@ -311,6 +311,7 @@ const App = {
   },
 
   _initQuiz() {
+    this.quizState.submitted = false;
     const q = this.quizState.questions[this.quizState.currentIndex];
     if (q.type === "choice") {
       this._selectedChoice = null;
@@ -333,6 +334,7 @@ const App = {
   },
 
   _selectChoice(index) {
+    if (this.quizState.submitted) return;
     this._selectedChoice = index;
     document.querySelectorAll(".option-item").forEach((el, i) => {
       el.classList.toggle("selected", i === index);
@@ -350,6 +352,7 @@ const App = {
     const submitBtn = document.getElementById("submit-btn");
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner"></span>';
+    this.quizState.submitted = true;
 
     try {
       if (q.type === "choice") {
@@ -465,6 +468,9 @@ const App = {
         </div>
       </div>
     `;
+
+    const answerArea = document.getElementById("answer-area");
+    if (answerArea) answerArea.classList.add("answered");
 
     const { currentIndex, questions } = this.quizState;
     const isLast = currentIndex === questions.length - 1;
