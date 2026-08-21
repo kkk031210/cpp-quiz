@@ -322,6 +322,95 @@ body {
   margin-top: 4px;
 }
 
+/* 模块切换器 */
+.module-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.module-tab {
+  flex: 1;
+  min-width: 140px;
+  padding: 14px 16px;
+  border: 2px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: white;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.module-tab:hover {
+  border-color: var(--gray-300);
+  transform: translateY(-1px);
+}
+
+.module-tab.active {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.12);
+}
+
+.module-icon {
+  font-size: 22px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.module-name {
+  font-weight: 600;
+  font-size: 14px;
+  display: block;
+}
+
+.module-desc {
+  font-size: 11px;
+  color: var(--gray-500);
+  display: block;
+  margin-top: 3px;
+}
+
+/* 学习中心的紧凑模块筛选 */
+.module-tabs-sm .module-tab {
+  flex: none;
+  min-width: 0;
+  padding: 8px 14px;
+  border-width: 1.5px;
+}
+
+.module-tabs-sm .module-icon {
+  font-size: 15px;
+  display: inline;
+  margin-bottom: 0;
+  margin-right: 4px;
+}
+
+.module-tabs-sm .module-name {
+  display: inline;
+  font-size: 13px;
+}
+
+/* 模块徽章（答题页） */
+.badge-module {
+  background: var(--primary-light);
+  color: var(--primary);
+  border: 1px solid var(--primary);
+}
+
+/* 图表空态 */
+.chart-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--gray-500);
+  font-size: 13px;
+}
+
+/* 学习中心模块筛选区块 */
+.stats-module-filter {
+  margin-bottom: 16px;
+}
+
 /* 知识点卡片 */
 .kp-grid {
   display: grid;
@@ -928,6 +1017,9 @@ body {
   #main-content { padding: 20px 16px 60px; }
 
   .mode-tabs { flex-direction: column; }
+  .module-tabs { flex-direction: column; }
+  .module-tab { min-width: 0; }
+  .module-tabs-sm { flex-direction: row; overflow-x: auto; flex-wrap: nowrap; }
 
   .kp-grid {
     grid-template-columns: 1fr;
