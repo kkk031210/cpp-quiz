@@ -267,16 +267,6 @@ body {
   transition: border-color 0.15s;
 }
 
-.select {
-  appearance: none;
-  -webkit-appearance: none;
-  padding-right: 36px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 4px center;
-  background-size: 16px;
-}
-
 .select:focus, .input:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
@@ -330,6 +320,95 @@ body {
   color: var(--gray-500);
   display: block;
   margin-top: 4px;
+}
+
+/* 模块切换器 */
+.module-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.module-tab {
+  flex: 1;
+  min-width: 140px;
+  padding: 14px 16px;
+  border: 2px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: white;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.module-tab:hover {
+  border-color: var(--gray-300);
+  transform: translateY(-1px);
+}
+
+.module-tab.active {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.12);
+}
+
+.module-icon {
+  font-size: 22px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.module-name {
+  font-weight: 600;
+  font-size: 14px;
+  display: block;
+}
+
+.module-desc {
+  font-size: 11px;
+  color: var(--gray-500);
+  display: block;
+  margin-top: 3px;
+}
+
+/* 学习中心的紧凑模块筛选 */
+.module-tabs-sm .module-tab {
+  flex: none;
+  min-width: 0;
+  padding: 8px 14px;
+  border-width: 1.5px;
+}
+
+.module-tabs-sm .module-icon {
+  font-size: 15px;
+  display: inline;
+  margin-bottom: 0;
+  margin-right: 4px;
+}
+
+.module-tabs-sm .module-name {
+  display: inline;
+  font-size: 13px;
+}
+
+/* 模块徽章（答题页） */
+.badge-module {
+  background: var(--primary-light);
+  color: var(--primary);
+  border: 1px solid var(--primary);
+}
+
+/* 图表空态 */
+.chart-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--gray-500);
+  font-size: 13px;
+}
+
+/* 学习中心模块筛选区块 */
+.stats-module-filter {
+  margin-bottom: 16px;
 }
 
 /* 知识点卡片 */
@@ -489,35 +568,6 @@ body {
 
 .quiz-answer-area {
   margin-bottom: 20px;
-}
-
-/* 提交答案后锁定答题区，选项变为禁用灰色 */
-.quiz-answer-area.answered {
-  pointer-events: none;
-}
-
-.quiz-answer-area.answered .option-item {
-  cursor: not-allowed;
-  opacity: 0.55;
-  background: var(--gray-100);
-  border-color: var(--gray-200);
-}
-
-.quiz-answer-area.answered .option-item .option-letter {
-  background: var(--gray-200);
-  color: var(--gray-500);
-}
-
-/* 已选择的项提交后仍保持可见，但转为灰色以表达锁定 */
-.quiz-answer-area.answered .option-item.selected {
-  opacity: 1;
-  border-color: var(--gray-400);
-  background: var(--gray-100);
-}
-
-.quiz-answer-area.answered .option-item.selected .option-letter {
-  background: var(--gray-400);
-  color: #fff;
 }
 
 /* 选择题选项 */
@@ -967,6 +1017,9 @@ body {
   #main-content { padding: 20px 16px 60px; }
 
   .mode-tabs { flex-direction: column; }
+  .module-tabs { flex-direction: column; }
+  .module-tab { min-width: 0; }
+  .module-tabs-sm { flex-direction: row; overflow-x: auto; flex-wrap: nowrap; }
 
   .kp-grid {
     grid-template-columns: 1fr;

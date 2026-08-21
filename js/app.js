@@ -15,6 +15,32 @@ const App = {
   // 图表实例
   charts: {},
 
+  // 当前激活模块（首页与快速练习用）
+  currentModule: "cpp",
+
+  // 学习中心模块筛选：'all' 或模块ID
+  statsModuleFilter: "all",
+
+  // ===== 模块辅助 =====
+
+  _getModule() {
+    const settings = Storage.getSettings();
+    return QuizModules.find(m => m.id === settings.lastModule) || QuizModules[0];
+  },
+
+  _setCurrentModule(moduleId) {
+    this.currentModule = moduleId;
+    const settings = Storage.getSettings();
+    settings.lastModule = moduleId;
+    Storage.saveSettings(settings);
+  },
+
+  // 某知识点属于哪个模块
+  _moduleOfKp(kpName) {
+    const kp = KnowledgePoints.find(k => k.name === kpName);
+    return kp ? kp.moduleId : null;
+  },
+
   // ===== 路由 =====
 
   navigate(route) {
@@ -60,14 +86,14 @@ const App = {
   _renderHome() {
     const settings = Storage.getSettings();
     const hasProgress = Storage.getProgress();
+    const module = this._getModule();
 
-    const kpCards = KnowledgePoints.map(kp => `
-      <label class="kp-card" data-kp-id="${kp.id}">
-        <input type="checkbox" value="${kp.name}" class="kp-checkbox">
-        <span class="kp-icon">${kp.icon}</span>
-        <span class="kp-name">${kp.name}</span>
-        <span class="kp-desc">${kp.description}</span>
-      </label>
+    const moduleTabs = QuizModules.map(m => `
+      <button class="module-tab ${m.id === module.id ? "active" : ""}" data-module="${m.id}" onclick="App._selectModule('${m.id}')">
+        <span class="module-icon">${m.icon}</span>
+        <span class="module-name">${m.name}</span>
+        <span class="module-desc">${m.description}</span>
+      </button>
     `).join("");
 
     return `
@@ -85,6 +111,13 @@ const App = {
         ` : ""}
 
         <div class="home-section">
+          <h2 class="section-title">选择模块</h2>
+          <div class="module-tabs">
+            ${moduleTabs}
+          </div>
+        </div>
+
+        <div class="home-section">
           <h2 class="section-title">选择练习模式</h2>
           <div class="mode-tabs">
             <button class="mode-tab active" data-mode="custom" onclick="App._selectMode('custom')">
@@ -95,21 +128,15 @@ const App = {
             <button class="mode-tab" data-mode="quick" onclick="App._selectMode('quick')">
               <span class="mode-icon">⚡</span>
               <span class="mode-name">快速练习</span>
-              <span class="mode-desc">随机知识点，快速开始</span>
+              <span class="mode-desc">当前模块随机知识点</span>
             </button>
           </div>
         </div>
 
         <div id="custom-config" class="home-section">
-          <h2 class="section-title">选择知识点 <span class="section-hint">（可多选，至少选 1 个）</span></h2>
-          <div class="kp-grid">
-            <label class="kp-card kp-card-all">
-              <input type="checkbox" id="select-all-kp" onchange="App._toggleAllKp(this.checked)">
-              <span class="kp-icon">✅</span>
-              <span class="kp-name">全选</span>
-              <span class="kp-desc">选择所有知识点</span>
-            </label>
-            ${kpCards}
+          <h2 class="section-title">选择知识点 <span class="section-hint">（${module.name} 模块，可多选）</span></h2>
+          <div class="kp-grid" id="kp-grid">
+            ${this._renderKpGrid()}
           </div>
         </div>
 
@@ -154,8 +181,50 @@ const App = {
     `;
   },
 
+  // 渲染当前模块的知识点卡片网格
+  _renderKpGrid() {
+    const module = this._getModule();
+    const kpCards = module.knowledgePoints.map(kp => `
+      <label class="kp-card" data-kp-id="${kp.id}">
+        <input type="checkbox" value="${kp.name}" class="kp-checkbox">
+        <span class="kp-icon">${kp.icon}</span>
+        <span class="kp-name">${kp.name}</span>
+        <span class="kp-desc">${kp.description}</span>
+      </label>
+    `).join("");
+
+    return `
+      <label class="kp-card kp-card-all">
+        <input type="checkbox" id="select-all-kp" onchange="App._toggleAllKp(this.checked)">
+        <span class="kp-icon">✅</span>
+        <span class="kp-name">全选</span>
+        <span class="kp-desc">选择${module.name}模块所有知识点</span>
+      </label>
+      ${kpCards}
+    `;
+  },
+
   _initHome() {
     this._currentMode = "custom";
+    this.currentModule = this._getModule().id;
+  },
+
+  // 切换模块：更新高亮并重渲染知识点网格
+  _selectModule(moduleId) {
+    this._setCurrentModule(moduleId);
+    this.currentModule = moduleId;
+    document.querySelectorAll(".module-tab").forEach(el => {
+      el.classList.toggle("active", el.dataset.module === moduleId);
+    });
+    const grid = document.getElementById("kp-grid");
+    if (grid) {
+      grid.innerHTML = this._renderKpGrid();
+      const title = grid.closest(".home-section")?.querySelector(".section-title");
+      if (title) {
+        const module = this._getModule();
+        title.innerHTML = `选择知识点 <span class="section-hint">（${module.name} 模块，可多选）</span>`;
+      }
+    }
   },
 
   _selectMode(mode) {
@@ -188,19 +257,26 @@ const App = {
       return;
     }
 
-    let kpNames, types, count, difficulty;
+    let kpNames, types, count, difficulty, moduleId;
 
     if (this._currentMode === "quick") {
-      // 快速模式：随机选 3 个知识点
-      const shuffled = [...KnowledgePoints].sort(() => Math.random() - 0.5);
-      const selected = shuffled.slice(0, 3);
+      // 快速模式：从当前模块随机抽 3 个知识点
+      const module = this._getModule();
+      moduleId = module.id;
+      const shuffled = [...module.knowledgePoints].sort(() => Math.random() - 0.5);
+      const selected = shuffled.slice(0, Math.min(3, shuffled.length));
       kpNames = selected.map(kp => kp.name);
       types = ["choice", "fill", "short"];
       count = 10;
       difficulty = "随机";
     } else {
-      // 自定义模式
-      kpNames = Array.from(document.querySelectorAll(".kp-checkbox:checked")).map(cb => cb.value);
+      // 自定义模式：限定在当前模块内选择
+      const module = this._getModule();
+      moduleId = module.id;
+      const moduleKpNames = new Set(module.knowledgePoints.map(kp => kp.name));
+      kpNames = Array.from(document.querySelectorAll(".kp-checkbox:checked"))
+        .map(cb => cb.value)
+        .filter(name => moduleKpNames.has(name));
       if (kpNames.length === 0) {
         this._toast("请至少选择 1 个知识点", "error");
         return;
@@ -220,12 +296,13 @@ const App = {
     btn.innerHTML = '<span class="spinner"></span> 正在生成题目...';
 
     try {
-      const questions = await Api.generateQuestions(kpNames, types, count, difficulty);
+      const questions = await Api.generateQuestions(kpNames, types, count, difficulty, moduleId);
       this.quizState = {
         questions,
         currentIndex: 0,
         answers: [],
-        mode: this._currentMode
+        mode: this._currentMode,
+        moduleId
       };
       Storage.clearProgress();
       this.navigate("quiz");
@@ -272,6 +349,7 @@ const App = {
 
     const typeLabels = { choice: "选择题", fill: "填空题", short: "简答题" };
     const typeColors = { choice: "badge-blue", fill: "badge-green", short: "badge-purple" };
+    const quizModule = QuizModules.find(m => m.id === this.quizState.moduleId);
 
     return `
       <div class="page-quiz">
@@ -286,6 +364,7 @@ const App = {
 
         <div class="quiz-card" id="quiz-card">
           <div class="quiz-meta">
+            ${quizModule ? `<span class="badge badge-module">${quizModule.icon} ${quizModule.name}</span>` : ""}
             <span class="badge ${typeColors[q.type]}">${typeLabels[q.type]}</span>
             <span class="badge badge-gray">${q.difficulty || "中等"}</span>
             <span class="badge badge-outline">${q.knowledgePoint}</span>
@@ -311,7 +390,6 @@ const App = {
   },
 
   _initQuiz() {
-    this.quizState.submitted = false;
     const q = this.quizState.questions[this.quizState.currentIndex];
     if (q.type === "choice") {
       this._selectedChoice = null;
@@ -334,7 +412,6 @@ const App = {
   },
 
   _selectChoice(index) {
-    if (this.quizState.submitted) return;
     this._selectedChoice = index;
     document.querySelectorAll(".option-item").forEach((el, i) => {
       el.classList.toggle("selected", i === index);
@@ -352,7 +429,6 @@ const App = {
     const submitBtn = document.getElementById("submit-btn");
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner"></span>';
-    this.quizState.submitted = true;
 
     try {
       if (q.type === "choice") {
@@ -369,7 +445,7 @@ const App = {
       } else if (q.type === "short") {
         userAnswer = document.getElementById("short-answer").value.trim();
         submitBtn.innerHTML = '<span class="spinner"></span> AI 评判中...';
-        const evalResult = await Api.evaluateShortAnswer(q.question, userAnswer, q.answer);
+        const evalResult = await Api.evaluateShortAnswer(q.question, userAnswer, q.answer, this.quizState.moduleId);
         isCorrect = evalResult.result === "correct";
         const resultMap = { correct: "✅ 回答正确", partial: "🟡 部分正确", wrong: "❌ 回答错误" };
         resultDetail = `${resultMap[evalResult.result] || "❌ 回答错误"}（得分: ${evalResult.score}）\n💬 ${evalResult.comment || ""}`;
@@ -469,9 +545,6 @@ const App = {
       </div>
     `;
 
-    const answerArea = document.getElementById("answer-area");
-    if (answerArea) answerArea.classList.add("answered");
-
     const { currentIndex, questions } = this.quizState;
     const isLast = currentIndex === questions.length - 1;
 
@@ -561,18 +634,48 @@ const App = {
 
   _renderStats() {
     const stats = Storage.getStats();
-    const wrongQuestions = Storage.getWrongQuestions();
+    const moduleFilter = this.statsModuleFilter;
 
-    const accuracy = stats.totalAnswered > 0
-      ? Math.round((stats.totalCorrect / stats.totalAnswered) * 100)
-      : 0;
+    // 按模块筛选范围计算数字面板
+    let answered = stats.totalAnswered, correct = stats.totalCorrect;
+    if (moduleFilter !== "all") {
+      const module = QuizModules.find(m => m.id === moduleFilter);
+      answered = 0; correct = 0;
+      module.knowledgePoints.forEach(kp => {
+        const s = stats.byKnowledgePoint[kp.name];
+        if (s) { answered += s.answered; correct += s.correct; }
+      });
+    }
+    const accuracy = answered > 0 ? Math.round((correct / answered) * 100) : 0;
+
+    const wrongQuestions = this._filteredWrongQuestions();
+
+    const moduleFilterTabs = `
+      <button class="module-tab ${moduleFilter === "all" ? "active" : ""}" data-module="all" onclick="App._setStatsModuleFilter('all')">
+        <span class="module-icon">📚</span>
+        <span class="module-name">全部</span>
+      </button>
+      ${QuizModules.map(m => `
+        <button class="module-tab ${moduleFilter === m.id ? "active" : ""}" data-module="${m.id}" onclick="App._setStatsModuleFilter('${m.id}')">
+          <span class="module-icon">${m.icon}</span>
+          <span class="module-name">${m.name}</span>
+        </button>
+      `).join("")}
+    `;
 
     return `
       <div class="page-stats">
+        <div class="home-section stats-module-filter">
+          <h2 class="section-title">学习范围</h2>
+          <div class="module-tabs module-tabs-sm">
+            ${moduleFilterTabs}
+          </div>
+        </div>
+
         <div class="stats-overview">
           <div class="stat-card">
-            <div class="stat-value">${stats.totalAnswered}</div>
-            <div class="stat-label">总答题数</div>
+            <div class="stat-value">${answered}</div>
+            <div class="stat-label">${moduleFilter === "all" ? "总答题数" : "模块答题数"}</div>
           </div>
           <div class="stat-card">
             <div class="stat-value ${accuracy >= 60 ? "text-green" : "text-red"}">${accuracy}%</div>
@@ -590,8 +693,9 @@ const App = {
 
         <div class="stats-charts">
           <div class="chart-card">
-            <h3 class="chart-title">各知识点掌握度</h3>
+            <h3 class="chart-title">${moduleFilter === "all" ? "各模块掌握度" : "知识点掌握度"}</h3>
             <canvas id="radar-chart"></canvas>
+            <div id="radar-empty" class="chart-empty" style="display:none">暂无该范围内的练习数据，先去刷几题吧～</div>
           </div>
           <div class="chart-card">
             <h3 class="chart-title">最近 7 天练习</h3>
@@ -606,9 +710,7 @@ const App = {
               <div class="wrong-book-actions">
                 <select id="wrong-filter" class="select select-sm" onchange="App._filterWrongQuestions()">
                   <option value="">全部知识点</option>
-                  ${[...new Set(wrongQuestions.map(q => q.knowledgePoint))].map(kp =>
-                    `<option value="${kp}">${kp}</option>`
-                  ).join("")}
+                  ${this._wrongFilterOptions(wrongQuestions)}
                 </select>
                 <button class="btn btn-text btn-danger" onclick="App._clearWrongBook()">清空</button>
               </div>
@@ -621,6 +723,39 @@ const App = {
         </div>
       </div>
     `;
+  },
+
+  // 按模块筛选错题
+  _filteredWrongQuestions() {
+    const moduleFilter = this.statsModuleFilter;
+    let list = Storage.getWrongQuestions();
+    if (moduleFilter !== "all") {
+      const kpNames = new Set(
+        KnowledgePoints.filter(kp => kp.moduleId === moduleFilter).map(kp => kp.name)
+      );
+      list = list.filter(q => kpNames.has(q.knowledgePoint));
+    }
+    return list;
+  },
+
+  // 错题知识点下拉选项（随模块筛选联动）
+  _wrongFilterOptions(wrongQuestions) {
+    const moduleFilter = this.statsModuleFilter;
+    const kps = [...new Set(wrongQuestions.map(q => q.knowledgePoint))];
+    if (moduleFilter !== "all") {
+      const moduleKps = new Set(
+        KnowledgePoints.filter(kp => kp.moduleId === moduleFilter).map(kp => kp.name)
+      );
+      return kps.filter(kp => moduleKps.has(kp)).map(kp =>
+        `<option value="${kp}">${kp}</option>`
+      ).join("");
+    }
+    return kps.map(kp => `<option value="${kp}">${kp}</option>`).join("");
+  },
+
+  _setStatsModuleFilter(filter) {
+    this.statsModuleFilter = filter;
+    this.navigate("stats");
   },
 
   _renderWrongList(wrongQuestions) {
@@ -649,25 +784,52 @@ const App = {
 
   _renderRadarChart() {
     const stats = Storage.getStats();
-    const kpEntries = Object.entries(stats.byKnowledgePoint);
+    const moduleFilter = this.statsModuleFilter;
+    const emptyEl = document.getElementById("radar-empty");
+    const canvas = document.getElementById("radar-chart");
+    if (!canvas) return;
 
-    if (kpEntries.length === 0) return;
+    let labels, data;
+    let hasData = false;
 
-    // 确保所有知识点都有数据（未练习的为 0）
-    const allKpNames = KnowledgePoints.map(kp => kp.name);
-    const labels = allKpNames.filter(name => stats.byKnowledgePoint[name]);
-    const data = labels.map(name => {
-      const s = stats.byKnowledgePoint[name];
-      return s.answered > 0 ? Math.round((s.correct / s.answered) * 100) : 0;
-    });
+    if (moduleFilter === "all") {
+      // 全部：按模块维度聚合
+      labels = QuizModules.map(m => m.name);
+      data = labels.map(name => {
+        const module = QuizModules.find(m => m.name === name);
+        let answered = 0, correct = 0;
+        module.knowledgePoints.forEach(kp => {
+          const s = stats.byKnowledgePoint[kp.name];
+          if (s) { answered += s.answered; correct += s.correct; }
+        });
+        if (answered > 0) hasData = true;
+        return answered > 0 ? Math.round((correct / answered) * 100) : 0;
+      });
+    } else {
+      // 单模块：该模块的知识点维度
+      const module = QuizModules.find(m => m.id === moduleFilter);
+      labels = module.knowledgePoints.map(kp => kp.name);
+      data = labels.map(name => {
+        const s = stats.byKnowledgePoint[name];
+        if (s && s.answered > 0) {
+          hasData = true;
+          return Math.round((s.correct / s.answered) * 100);
+        }
+        return 0;
+      });
+    }
 
-    if (labels.length === 0) return;
+    // 无数据时显示占位，销毁旧图表
+    if (this.charts.radar) { this.charts.radar.destroy(); this.charts.radar = null; }
+    if (!hasData) {
+      canvas.style.display = "none";
+      if (emptyEl) emptyEl.style.display = "";
+      return;
+    }
+    canvas.style.display = "";
+    if (emptyEl) emptyEl.style.display = "none";
 
-    const ctx = document.getElementById("radar-chart");
-    if (!ctx) return;
-
-    if (this.charts.radar) this.charts.radar.destroy();
-
+    const ctx = canvas.getContext("2d");
     this.charts.radar = new Chart(ctx, {
       type: "radar",
       data: {
@@ -749,9 +911,9 @@ const App = {
 
   _filterWrongQuestions() {
     const filter = document.getElementById("wrong-filter").value;
-    const wrongQuestions = Storage.getWrongQuestions();
-    const filtered = filter ? wrongQuestions.filter(q => q.knowledgePoint === filter) : wrongQuestions;
-    document.getElementById("wrong-list").innerHTML = this._renderWrongList(filtered);
+    let wrongQuestions = this._filteredWrongQuestions();
+    if (filter) wrongQuestions = wrongQuestions.filter(q => q.knowledgePoint === filter);
+    document.getElementById("wrong-list").innerHTML = this._renderWrongList(wrongQuestions);
   },
 
   _removeWrong(hash) {
