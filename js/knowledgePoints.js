@@ -281,6 +281,128 @@ const QuizModules = [
         topics: ["Redis数据结构", "缓存穿透", "缓存雪崩", "缓存击穿", "缓存一致性", "过期策略", "布隆过滤器", "分布式锁"]
       }
     ]
+  },
+  {
+    id: "stm32",
+    name: "STM32",
+    icon: "🔌",
+    description: "嵌入式外设 · 通信协议 · RTOS",
+    // 该模块使用 js/stm32Bank.js 内置题库，离线可练，不需要配置 API Key
+    localBank: true,
+    knowledgePoints: [
+      {
+        id: "stm32_gpio",
+        name: "GPIO",
+        icon: "🔌",
+        description: "工作模式 · 引脚命名 · LED/按键/蜂鸣器驱动",
+        topics: ["GPIO模式", "上拉输入", "下拉输入", "浮空输入", "模拟输入", "推挽输出", "开漏输出", "复用模式"]
+      },
+      {
+        id: "stm32_clock",
+        name: "时钟体系",
+        icon: "⏰",
+        description: "时钟源 · 总线频率 · 启动流程",
+        topics: ["HSI", "HSE", "LSI", "LSE", "PLL", "AHB/APB", "SysTick", "启动流程", "Reset_Handler"]
+      },
+      {
+        id: "stm32_interrupt",
+        name: "中断体系",
+        icon: "🔔",
+        description: "NVIC · EXTI · 前后台系统",
+        topics: ["中断", "NVIC", "EXTI", "SYSCFG", "抢占优先级", "响应优先级", "中断服务函数", "前后台系统"]
+      },
+      {
+        id: "stm32_tim",
+        name: "TIM和PWM",
+        icon: "⏱️",
+        description: "定时器分类 · 计数与分频 · PWM 输出",
+        topics: ["基本定时器", "通用定时器", "高级定时器", "PSC", "ARR", "CNT", "CCR", "PWM1/PWM2", "占空比"]
+      },
+      {
+        id: "stm32_wdg",
+        name: "看门狗",
+        icon: "🐕",
+        description: "独立看门狗 · 窗口看门狗 · 复位机制",
+        topics: ["IWDG", "WWDG", "LSI", "喂狗", "复位", "EWI", "窗口上限"]
+      },
+      {
+        id: "stm32_flash",
+        name: "FLASH闪存",
+        icon: "💾",
+        description: "存储器演进 · 扇区结构 · 掉电存储",
+        topics: ["EEPROM与FLASH", "Nand/Nor", "扇区擦除", "解锁上锁", "0x08000000", "扇区划分"]
+      },
+      {
+        id: "stm32_usart",
+        name: "USART和UART",
+        icon: "📡",
+        description: "串行通信概念 · 帧格式 · 波特率",
+        topics: ["串行/并行", "同步/异步", "单工/半双工/全双工", "波特率", "帧格式", "RS232", "RS485", "printf重定向"]
+      },
+      {
+        id: "stm32_adc",
+        name: "ADC和DAC",
+        icon: "📊",
+        description: "PCM 采样 · 精度与通道 · 转换周期",
+        topics: ["PCM", "采样保持量化编码", "12位精度", "规则组/注入组", "左对齐右对齐", "采样周期", "DAC", "0欧姆电阻"]
+      },
+      {
+        id: "stm32_pwr",
+        name: "PWR电源管理",
+        icon: "🔋",
+        description: "睡眠/停止/待机 · 低功耗设计",
+        topics: ["睡眠模式", "停止模式", "待机模式", "WFI", "唤醒条件", "PWR_EnterSTOPMode", "WKUP"]
+      },
+      {
+        id: "stm32_dma",
+        name: "DMA",
+        icon: "🚚",
+        description: "Stream/Channel · 传输方向与模式 · FIFO",
+        topics: ["DMA1/DMA2", "Stream", "Channel", "FIFO", "正常模式", "循环模式", "传输方向", "外设与内存"]
+      },
+      {
+        id: "stm32_onewire",
+        name: "单总线通讯",
+        icon: "➰",
+        description: "单线双向 · DHT11 时序驱动",
+        topics: ["单线双向", "达拉斯", "DHT11", "DS18B20", "复位与应答", "写0写1", "GPIO方向切换"]
+      },
+      {
+        id: "stm32_bitband",
+        name: "位带操作",
+        icon: "🎯",
+        description: "位带区与别名区 · 地址计算公式",
+        topics: ["位带区", "位带别名区", "原子操作", "bit_word_addr", "byte_offset", "bit_number"]
+      },
+      {
+        id: "stm32_spi",
+        name: "软硬件SPI",
+        icon: "🔗",
+        description: "一主多从 · CPOL/CPHA · W25Q128 读写",
+        topics: ["SCLK/MOSI/MISO/CS", "一主多从", "CPOL", "CPHA", "MSB", "W25Q128", "写使能/写失能", "扇区擦除"]
+      },
+      {
+        id: "stm32_iic",
+        name: "IIC总线",
+        icon: "🔀",
+        description: "开漏与上拉 · 地址与速率 · 锁死排查",
+        topics: ["SCL/SDA", "复用开漏", "外部上拉", "线与", "7位/10位地址", "速率兼容", "IIC锁死", "软件IIC"]
+      },
+      {
+        id: "stm32_can",
+        name: "CAN总线通讯",
+        icon: "🚗",
+        description: "差分电平 · 帧格式 · 位填充 · 多机组网",
+        topics: ["CAN_H/CAN_L", "差分信号", "高速/低速CAN", "报文ID", "显性/隐性", "数据帧格式", "位填充", "验收滤波器"]
+      },
+      {
+        id: "stm32_freertos",
+        name: "FreeRTOS移植",
+        icon: "🧩",
+        description: "RTOS 概念 · 源码结构 · 工程移植 · 配置项",
+        topics: ["RTOS", "FreeRTOS", "源码结构", "移植步骤", "FreeRTOSConfig.h", "抢占式调度", "时间片轮转", "钩子函数"]
+      }
+    ]
   }
 ];
 

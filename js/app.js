@@ -41,6 +41,17 @@ const App = {
     return kp ? kp.moduleId : null;
   },
 
+  // 该模块是否使用内置题库（离线模式，不需要 API Key）
+  _isLocalBank(moduleId) {
+    const m = QuizModules.find(mm => mm.id === moduleId);
+    return !!(m && m.localBank === true);
+  },
+
+  // 当前模块是否离线题库模式
+  _currentModuleIsBank() {
+    return this._isLocalBank(this._getModule().id);
+  },
+
   // ===== 路由 =====
 
   navigate(route) {
@@ -87,6 +98,7 @@ const App = {
     const settings = Storage.getSettings();
     const hasProgress = Storage.getProgress();
     const module = this._getModule();
+    const isBank = module.localBank === true;
 
     const moduleTabs = QuizModules.map(m => `
       <button class="module-tab ${m.id === module.id ? "active" : ""}" data-module="${m.id}" onclick="App._selectModule('${m.id}')">
@@ -98,9 +110,15 @@ const App = {
 
     return `
       <div class="page-home">
-        ${!settings.apiKey ? `
+        ${!settings.apiKey && !isBank ? `
           <div class="banner banner-warning">
             ⚠️ 还未配置 API Key，请先前往 <a onclick="App.navigate('settings')">设置页</a> 配置大模型 API
+          </div>
+        ` : ""}
+
+        ${isBank ? `
+          <div class="banner banner-success">
+            📚 ${module.icon} ${module.name} 模块使用<b>内置题库</b>，无需 API Key 即可离线练习（共 ${this._bankQuestionCount()} 题，${module.knowledgePoints.length} 个章节）
           </div>
         ` : ""}
 
@@ -209,21 +227,14 @@ const App = {
     this.currentModule = this._getModule().id;
   },
 
-  // 切换模块：更新高亮并重渲染知识点网格
+  // 切换模块：整页重渲染（横幅、知识点网格、提示都要随模块变化），并保留当前练习模式
   _selectModule(moduleId) {
     this._setCurrentModule(moduleId);
     this.currentModule = moduleId;
-    document.querySelectorAll(".module-tab").forEach(el => {
-      el.classList.toggle("active", el.dataset.module === moduleId);
-    });
-    const grid = document.getElementById("kp-grid");
-    if (grid) {
-      grid.innerHTML = this._renderKpGrid();
-      const title = grid.closest(".home-section")?.querySelector(".section-title");
-      if (title) {
-        const module = this._getModule();
-        title.innerHTML = `选择知识点 <span class="section-hint">（${module.name} 模块，可多选）</span>`;
-      }
+    const keepMode = this._currentMode;
+    this.navigate("home");
+    if (keepMode && keepMode !== "custom") {
+      this._selectMode(keepMode);
     }
   },
 
@@ -250,19 +261,24 @@ const App = {
   },
 
   async _startQuiz() {
-    const settings = Storage.getSettings();
-    if (!settings.apiKey) {
-      this._toast("请先在设置中配置 API Key", "error");
-      this.navigate("settings");
-      return;
+    const module = this._getModule();
+    const moduleId = module.id;
+    const isBank = module.localBank === true;
+
+    // 离线题库模块不需要 API Key
+    if (!isBank) {
+      const settings = Storage.getSettings();
+      if (!settings.apiKey) {
+        this._toast("请先在设置中配置 API Key", "error");
+        this.navigate("settings");
+        return;
+      }
     }
 
-    let kpNames, types, count, difficulty, moduleId;
+    let kpNames, types, count, difficulty;
 
     if (this._currentMode === "quick") {
       // 快速模式：从当前模块随机抽 3 个知识点
-      const module = this._getModule();
-      moduleId = module.id;
       const shuffled = [...module.knowledgePoints].sort(() => Math.random() - 0.5);
       const selected = shuffled.slice(0, Math.min(3, shuffled.length));
       kpNames = selected.map(kp => kp.name);
@@ -271,8 +287,6 @@ const App = {
       difficulty = "随机";
     } else {
       // 自定义模式：限定在当前模块内选择
-      const module = this._getModule();
-      moduleId = module.id;
       const moduleKpNames = new Set(module.knowledgePoints.map(kp => kp.name));
       kpNames = Array.from(document.querySelectorAll(".kp-checkbox:checked"))
         .map(cb => cb.value)
@@ -296,7 +310,23 @@ const App = {
     btn.innerHTML = '<span class="spinner"></span> 正在生成题目...';
 
     try {
-      const questions = await Api.generateQuestions(kpNames, types, count, difficulty, moduleId);
+      let questions;
+      if (isBank) {
+        // 离线题库：本地抽题
+        questions = this._buildLocalQuiz(kpNames, types, count, difficulty);
+        if (questions.length === 0) {
+          throw new Error("内置题库中没有符合当前条件的题目，请调整知识点、题型或难度");
+        }
+        const diffInfo = this._lastBankDifficulty;
+        if (questions.length < count) {
+          this._toast(`符合条件的内置题目共 ${questions.length} 题，已全部抽取`, "info");
+        } else if (diffInfo && diffInfo.matched < count) {
+          this._toast(`内置题库中「${diffInfo.requested}」难度共 ${diffInfo.matched} 题，其余已用其他难度补足`, "info");
+        }
+      } else {
+        questions = await Api.generateQuestions(kpNames, types, count, difficulty, moduleId);
+      }
+
       this.quizState = {
         questions,
         currentIndex: 0,
@@ -311,6 +341,64 @@ const App = {
       btn.innerHTML = "🚀 开始练习";
       this._toast(`生成失败: ${e.message}`, "error");
     }
+  },
+
+  // ===== 内置题库（离线模式） =====
+
+  _bankChapters() {
+    return (typeof Stm32Bank !== "undefined" && Array.isArray(Stm32Bank)) ? Stm32Bank : [];
+  },
+
+  _bankQuestionCount() {
+    return this._bankChapters().reduce((n, ch) => n + ch.questions.length, 0);
+  },
+
+  /**
+   * 从内置题库抽取题目
+   * 难度策略：优先抽目标难度，不足的部分再用其他难度补足（避免「选困难却全是简单题」）
+   * @param {string[]} kpNames 选中的章节名称
+   * @param {string[]} types 题型
+   * @param {number} count 题目数量
+   * @param {string} difficulty 难度（"随机" 则不区分）
+   */
+  _buildLocalQuiz(kpNames, types, count, difficulty) {
+    const kpSet = new Set(kpNames);
+    const typeSet = new Set(types);
+    const shuffle = (arr) => {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    };
+
+    // 1. 按章节 + 题型筛选
+    const pool = [];
+    this._bankChapters().forEach(ch => {
+      if (!kpSet.has(ch.name)) return;
+      ch.questions.forEach(q => {
+        if (!typeSet.has(q.type)) return;
+        pool.push({ ...q, knowledgePoint: ch.name });
+      });
+    });
+
+    // 2. 难度优先排序：目标难度在前，其他难度在后
+    let ordered;
+    this._lastBankDifficulty = null;
+    if (difficulty && difficulty !== "随机") {
+      const preferred = shuffle(pool.filter(q => q.difficulty === difficulty));
+      const others = shuffle(pool.filter(q => q.difficulty !== difficulty));
+      ordered = [...preferred, ...others];
+      this._lastBankDifficulty = { requested: difficulty, matched: preferred.length };
+    } else {
+      ordered = shuffle(pool);
+    }
+
+    // 3. 取前 count 题
+    const stamp = Date.now();
+    return ordered
+      .slice(0, Math.min(count, ordered.length))
+      .map((q, idx) => ({ ...q, id: `bank_${stamp}_${idx}` }));
   },
 
   _resumeProgress() {
@@ -370,7 +458,7 @@ const App = {
             <span class="badge badge-outline">${q.knowledgePoint}</span>
           </div>
 
-          <div class="quiz-question">${this._escapeHtml(q.question)}</div>
+          <div class="quiz-question">${this._escapeMultiline(q.question)}</div>
 
           <div class="quiz-answer-area" id="answer-area">
             ${answerArea}
@@ -444,11 +532,19 @@ const App = {
           : `❌ 关键词匹配未通过（匹配 ${fillResult.matched}/${fillResult.total}，需 ≥60%）`;
       } else if (q.type === "short") {
         userAnswer = document.getElementById("short-answer").value.trim();
-        submitBtn.innerHTML = '<span class="spinner"></span> AI 评判中...';
-        const evalResult = await Api.evaluateShortAnswer(q.question, userAnswer, q.answer, this.quizState.moduleId);
-        isCorrect = evalResult.result === "correct";
-        const resultMap = { correct: "✅ 回答正确", partial: "🟡 部分正确", wrong: "❌ 回答错误" };
-        resultDetail = `${resultMap[evalResult.result] || "❌ 回答错误"}（得分: ${evalResult.score}）\n💬 ${evalResult.comment || ""}`;
+        if (this._isLocalBank(this.quizState.moduleId)) {
+          // 离线题库：本地按要点匹配判分 + 展示参考答案
+          const r = this._evaluateShortLocal(userAnswer, q);
+          isCorrect = r.result === "correct";
+          const resultMap = { correct: "✅ 回答正确", partial: "🟡 部分正确", wrong: "❌ 回答错误" };
+          resultDetail = `${resultMap[r.result]}（要点覆盖 ${r.score}%）\n💬 ${r.comment}`;
+        } else {
+          submitBtn.innerHTML = '<span class="spinner"></span> AI 评判中...';
+          const evalResult = await Api.evaluateShortAnswer(q.question, userAnswer, q.answer, this.quizState.moduleId);
+          isCorrect = evalResult.result === "correct";
+          const resultMap = { correct: "✅ 回答正确", partial: "🟡 部分正确", wrong: "❌ 回答错误" };
+          resultDetail = `${resultMap[evalResult.result] || "❌ 回答错误"}（得分: ${evalResult.score}）\n💬 ${evalResult.comment || ""}`;
+        }
       }
 
       // 记录答案
@@ -509,6 +605,44 @@ const App = {
     return { passed: matched / kws.length >= 0.6, matched, total: kws.length };
   },
 
+  /**
+   * 离线题库的简答题判分：按标准答案的要点关键词计算覆盖率
+   * ≥60% 判正确，≥30% 判部分正确，否则错误
+   */
+  _evaluateShortLocal(userAnswer, q) {
+    const normalize = (s) => String(s || "")
+      .toLowerCase()
+      .replace(/[\s\u3000]+/g, "")
+      .replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+
+    const normUser = normalize(userAnswer);
+    const kws = (q.keywords || [])
+      .map(k => ({ raw: k, norm: normalize(k) }))
+      .filter(k => k.norm);
+
+    // 没有要点时退化为与标准答案比对
+    if (kws.length === 0) {
+      const same = normUser && normUser === normalize(q.answer);
+      return {
+        result: same ? "correct" : "wrong",
+        score: same ? 100 : 0,
+        comment: same ? "与参考答案一致。" : "请对照下方参考答案补充要点。"
+      };
+    }
+
+    const hit = kws.filter(k => normUser.includes(k.norm));
+    const ratio = hit.length / kws.length;
+    const score = Math.round(ratio * 100);
+    const result = ratio >= 0.6 ? "correct" : ratio >= 0.3 ? "partial" : "wrong";
+    const missed = kws.filter(k => !normUser.includes(k.norm)).map(k => k.raw);
+
+    const comment = result === "correct"
+      ? `要点覆盖良好（命中 ${hit.length}/${kws.length}），请对照下方参考答案确认表述是否准确。`
+      : `命中 ${hit.length}/${kws.length} 个要点${missed.length ? "，遗漏：" + missed.join("、") : ""}。请对照下方参考答案补充。`;
+
+    return { result, score, comment };
+  },
+
   _showFeedback(q, userAnswer, isCorrect, resultDetail) {
     const feedbackArea = document.getElementById("feedback-area");
     const submitBtn = document.getElementById("submit-btn");
@@ -517,14 +651,14 @@ const App = {
     if (q.type === "choice") {
       userAnswerDisplay = `你的选择: ${String.fromCharCode(65 + userAnswer)}. ${q.options[userAnswer]}`;
     } else {
-      userAnswerDisplay = `你的答案: ${this._escapeHtml(String(userAnswer))}`;
+      userAnswerDisplay = `你的答案: ${this._escapeMultiline(String(userAnswer))}`;
     }
 
     let correctAnswerDisplay = "";
     if (q.type === "choice") {
       correctAnswerDisplay = `正确答案: ${String.fromCharCode(65 + q.answer)}. ${q.options[q.answer]}`;
     } else {
-      correctAnswerDisplay = `参考答案: ${this._escapeHtml(String(q.answer))}`;
+      correctAnswerDisplay = `参考答案: ${this._escapeMultiline(String(q.answer))}`;
     }
 
     feedbackArea.innerHTML = `
@@ -538,9 +672,15 @@ const App = {
           <div class="feedback-label">正确答案</div>
           <div class="feedback-content content-correct">${correctAnswerDisplay}</div>
         </div>
+        ${q.keywords && q.keywords.length ? `
+          <div class="feedback-section">
+            <div class="feedback-label">🎯 要点关键词</div>
+            <div class="feedback-content">${q.keywords.map(k => `<span class="badge badge-outline">${this._escapeHtml(k)}</span>`).join(" ")}</div>
+          </div>
+        ` : ""}
         <div class="feedback-section">
           <div class="feedback-label">📖 解析</div>
-          <div class="feedback-explanation">${this._escapeHtml(q.explanation)}</div>
+          <div class="feedback-explanation">${this._escapeMultiline(q.explanation)}</div>
         </div>
       </div>
     `;
@@ -589,8 +729,8 @@ const App = {
       return `
         <div class="result-wrong-item">
           <div class="result-wrong-q">${i + 1}. [${q.knowledgePoint}] ${this._escapeHtml(q.question)}</div>
-          <div class="result-wrong-a content-wrong">你的答案: ${q.type === "choice" ? q.options[a.userAnswer] || "未作答" : this._escapeHtml(String(a.userAnswer))}</div>
-          <div class="result-wrong-a content-correct">正确答案: ${q.type === "choice" ? q.options[q.answer] : this._escapeHtml(String(q.answer))}</div>
+          <div class="result-wrong-a content-wrong">你的答案: ${q.type === "choice" ? q.options[a.userAnswer] || "未作答" : this._escapeMultiline(String(a.userAnswer))}</div>
+          <div class="result-wrong-a content-correct">正确答案: ${q.type === "choice" ? q.options[q.answer] : this._escapeMultiline(String(q.answer))}</div>
         </div>
       `;
     }).join("");
@@ -770,9 +910,9 @@ const App = {
           <button class="btn btn-text btn-sm" onclick="App._removeWrong('${q._hash}')">删除</button>
         </div>
         <div class="wrong-item-q">${this._escapeHtml(q.question)}</div>
-        <div class="wrong-item-a content-wrong">你的答案: ${q.type === "choice" ? q.options?.[q.userAnswer] || "未作答" : this._escapeHtml(String(q.userAnswer || ""))}</div>
-        <div class="wrong-item-a content-correct">正确答案: ${q.type === "choice" ? q.options?.[q.answer] || "" : this._escapeHtml(String(q.answer))}</div>
-        ${q.explanation ? `<div class="wrong-item-explain">📖 ${this._escapeHtml(q.explanation)}</div>` : ""}
+        <div class="wrong-item-a content-wrong">你的答案: ${q.type === "choice" ? q.options?.[q.userAnswer] || "未作答" : this._escapeMultiline(String(q.userAnswer || ""))}</div>
+        <div class="wrong-item-a content-correct">正确答案: ${q.type === "choice" ? q.options?.[q.answer] || "" : this._escapeMultiline(String(q.answer))}</div>
+        ${q.explanation ? `<div class="wrong-item-explain">📖 ${this._escapeMultiline(q.explanation)}</div>` : ""}
       </div>
     `).join("");
   },
@@ -1147,6 +1287,11 @@ const App = {
     const div = document.createElement("div");
     div.textContent = String(text);
     return div.innerHTML;
+  },
+
+  // 转义后把换行保留为 <br>，用于参考答案、解析等多行文本
+  _escapeMultiline(text) {
+    return this._escapeHtml(text).replace(/\r?\n/g, "<br>");
   }
 };
 

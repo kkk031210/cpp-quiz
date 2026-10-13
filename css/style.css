@@ -158,6 +158,12 @@ body {
   color: #1e40af;
 }
 
+.banner-success {
+  background: var(--green-light);
+  border: 1px solid #86efac;
+  color: #166534;
+}
+
 /* 按钮 */
 .btn {
   padding: 10px 20px;
